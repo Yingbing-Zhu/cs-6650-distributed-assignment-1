@@ -22,11 +22,10 @@ public class MultiThreadedClientWithLog {
     private static final int REQUESTS_PER_THREAD = 1000; //1000
     private static final int TOTAL_REQUESTS = 200_000;
     private static final int MAX_RETRIES = 5;
-    private static final String BASE_URL = "http://54.149.84.9:8080/SkiResortAPIService/";
-//    private static final String BASE_URL = "http://localhost:8080/";
+    private static final String BASE_URL = "http://35.90.169.232:8080/SkiResortAPIService/";
     private static final String logPath = "logs/logfile.csv";
 
-    private static void runClient(int requestsPerThreadNew) {
+    private static void runClient(int additionalThreads) {
         AtomicInteger successfulRequests = new AtomicInteger(); // record successful requests
         AtomicInteger remainingRequests = new AtomicInteger(TOTAL_REQUESTS);
         BlockingQueue<LiftRideEvent> eventQueue = new LinkedBlockingQueue<>();
@@ -39,7 +38,7 @@ public class MultiThreadedClientWithLog {
         Thread logWriterThread = new Thread(new LogWriter(logQueue, logPath));
         logWriterThread.start();
 
-        ExecutorService executorService = Executors.newCachedThreadPool(); // handle a large number of short-lived tasks. Examples include a web server handling sporadic and high-volume request loads where tasks complete quickly.
+        ExecutorService executorService = Executors.newCachedThreadPool();
 
         ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
         CountDownLatch oldLatch = new CountDownLatch(NUM_THREADS_INITIAL);
@@ -56,19 +55,19 @@ public class MultiThreadedClientWithLog {
         }
 
 
-        int additionalThreads;
         try {
             Future<Void> completedFuture = completionService.take();  // Wait for the first thread to complete
             completedFuture.get();  // Throws an exception if the underlying task did
 
-            // Calculate additional threads needed based on remaining requests
-            additionalThreads = (remainingRequests.get() + requestsPerThreadNew - 1) / requestsPerThreadNew;
+            // Calculate request per thread based on remaining requests
+            int requestsPerThread = remainingRequests.get() / additionalThreads;
+            int leftOverRequests = remainingRequests.get() % additionalThreads;
             CountDownLatch newLatch = new CountDownLatch(additionalThreads);
             // Submit additional tasks
             for (int i = 0; i < additionalThreads; i++) {
                 ApiClient apiClient = new ApiClient();
                 apiClient.setBasePath(BASE_URL);
-                int batchSize = Math.min(remainingRequests.get(), requestsPerThreadNew);
+                int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
                 remainingRequests.addAndGet(-batchSize);
                 completionService.submit(new PostTaskWithLog(eventQueue, batchSize, apiClient, newLatch,
                         successfulRequests, MAX_RETRIES, logQueue), null);
@@ -86,17 +85,14 @@ public class MultiThreadedClientWithLog {
         long totalTime = endTime - startTime;
         double throughput = TOTAL_REQUESTS / (totalTime / 1000.0);  // requests per second
         System.out.println("Number of new threads created after initial batch: " + additionalThreads);
-        System.out.println("Requests Per thread after initial batch: " + requestsPerThreadNew);
         System.out.println("Number of successful requests: " + successfulRequests.get());
         System.out.println("Number of unsuccessful requests: " + (TOTAL_REQUESTS - successfulRequests.get()));
         System.out.println("Total run time (wall time): " + (totalTime / 1000.0) + " s");
         System.out.println("Total throughput (requests per second): " + throughput );
 
     }
-
     public static void main(String[] args) throws FileNotFoundException {
-        // run the client, usconfiguration
-        runClient(440);
+        runClient(350); // 200 active threads
 
         // get response times
         List<Long> responseTimes = readColumnValues(logPath, 2);

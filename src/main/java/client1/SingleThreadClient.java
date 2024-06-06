@@ -13,9 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SingleThreadClient {
     private static final int TOTAL_REQUESTS = 10_000;
     private static final int MAX_RETRIES = 5;
-    private static final String BASE_URL = "http://54.149.84.9:8080/SkiResortAPIService/";
-
-    //private static final String BASE_URL = "http://localhost:8080/";
+    private static final String BASE_URL = "http://35.90.169.232:8080/SkiResortAPIService/";
     private static final BlockingQueue<LiftRideEvent> eventQueue = new LinkedBlockingQueue<>();
 
     public static void main(String[] args) {
@@ -41,7 +39,7 @@ public class SingleThreadClient {
                             event.getSkierID());
 
                     if (response.getStatusCode() == 201) {
-                        System.out.println("Lift ride logged successfully for skier " + event.getSkierID());
+                        // System.out.println("Lift ride logged successfully" );
                         success = true;
                     } else if (response.getStatusCode() >= 400 && response.getStatusCode() < 600) {
                         System.err.println("Attempt " + (attempt + 1) + " failed: HTTP " + response.getStatusCode());

@@ -63,7 +63,7 @@ class PostTaskWithLog implements Runnable {
                         long end = System.currentTimeMillis();// when the HTTP 200/201 response is received, take another timestamp
                         long latency = end - start;
                         // Prepare log entry
-                        System.out.println("Lift ride logged successfully for skier " + event.getSkierID());
+                        // System.out.println("Lift ride logged successfully " );
                         successfulRequests.incrementAndGet();
                         String logEntry = start + ",POST," + latency + "," + response.getStatusCode();
                         logQueue.put(logEntry);

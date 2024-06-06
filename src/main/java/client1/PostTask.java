@@ -57,7 +57,7 @@ class PostTask implements Runnable {
 
                     count ++;
                     if (response.getStatusCode() == 201) {
-                        System.out.println("Lift ride logged successfully for skier " + event.getSkierID());
+                        // System.out.println("Lift ride logged successfully" + event.getSkierID());
                         successfulRequests.incrementAndGet();
                         success = true;
                     } else if (response.getStatusCode() >= 400 && response.getStatusCode() < 600) {
