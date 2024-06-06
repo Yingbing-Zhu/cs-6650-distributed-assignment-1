@@ -22,12 +22,14 @@ public class MultiThreadedClientWithLog {
     private static final int REQUESTS_PER_THREAD = 1000; //1000
     private static final int TOTAL_REQUESTS = 200_000;
     private static final int MAX_RETRIES = 5;
-    private static final String BASE_URL = "http://35.90.169.232:8080/SkiResortAPIService/";
+    // servlet
+    private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
+    // springboot
+    // private static final String BASE_URL = "http://34.221.187.81:8080/cs-6650-distributed-ski-resort-server-springboot-1.0-SNAPSHOT";
     private static final String logPath = "logs/logfile.csv";
 
-    private static void runClient(int additionalThreads) {
+    private static void runClient(int additionalThreads) throws InterruptedException {
         AtomicInteger successfulRequests = new AtomicInteger(); // record successful requests
-        AtomicInteger remainingRequests = new AtomicInteger(TOTAL_REQUESTS);
         BlockingQueue<LiftRideEvent> eventQueue = new LinkedBlockingQueue<>();
         BlockingQueue<String> logQueue = new LinkedBlockingQueue<>();
 
@@ -49,27 +51,31 @@ public class MultiThreadedClientWithLog {
         for (int i = 0; i < NUM_THREADS_INITIAL; i++) {
             ApiClient apiClient = new ApiClient();
             apiClient.setBasePath(BASE_URL);
-            remainingRequests.addAndGet(-REQUESTS_PER_THREAD);
-            completionService.submit(new PostTaskWithLog(eventQueue, REQUESTS_PER_THREAD, apiClient, oldLatch,
+            executorService.submit(new PostTaskWithLog(eventQueue, REQUESTS_PER_THREAD, apiClient, oldLatch,
                     successfulRequests, MAX_RETRIES, logQueue), null);
         }
-
 
         try {
             Future<Void> completedFuture = completionService.take();  // Wait for the first thread to complete
             completedFuture.get();  // Throws an exception if the underlying task did
 
+//            // Record the time when the first thread completes
+//            firstThreadCompletionTime = System.currentTimeMillis();
+//            firstTime = firstThreadCompletionTime - startTime;
+//            firstSuccessfulRequests = successfulRequests.get();
+
             // Calculate request per thread based on remaining requests
-            int requestsPerThread = remainingRequests.get() / additionalThreads;
-            int leftOverRequests = remainingRequests.get() % additionalThreads;
+            int remainingRequests = TOTAL_REQUESTS - REQUESTS_PER_THREAD * NUM_THREADS_INITIAL;
+            int requestsPerThread = remainingRequests / additionalThreads;
+            int leftOverRequests = remainingRequests % additionalThreads;
+
             CountDownLatch newLatch = new CountDownLatch(additionalThreads);
             // Submit additional tasks
             for (int i = 0; i < additionalThreads; i++) {
                 ApiClient apiClient = new ApiClient();
                 apiClient.setBasePath(BASE_URL);
                 int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
-                remainingRequests.addAndGet(-batchSize);
-                completionService.submit(new PostTaskWithLog(eventQueue, batchSize, apiClient, newLatch,
+                executorService.submit(new PostTaskWithLog(eventQueue, batchSize, apiClient, newLatch,
                         successfulRequests, MAX_RETRIES, logQueue), null);
             }
             newLatch.await();
@@ -91,7 +97,7 @@ public class MultiThreadedClientWithLog {
         System.out.println("Total throughput (requests per second): " + throughput );
 
     }
-    public static void main(String[] args) throws FileNotFoundException {
+    public static void main(String[] args) throws FileNotFoundException, InterruptedException {
         runClient(350); // 200 active threads
 
         // get response times

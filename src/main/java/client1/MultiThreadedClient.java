@@ -12,8 +12,10 @@ public class MultiThreadedClient {
     private static final int REQUESTS_PER_THREAD = 1000; // initial requests per thread
     private static final int TOTAL_REQUESTS = 200_000; // total requests
     private static final int MAX_RETRIES = 5; // retries in api call
-    private static final String BASE_URL = "http://35.90.169.232:8080/SkiResortAPIService/"; // server url
-    //private static final String BASE_URL = "http://localhost:8080/";
+    // servlet
+    private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
+    // springboot
+    // private static final String BASE_URL = "http://34.221.187.81:8080/cs-6650-distributed-ski-resort-server-springboot-1.0-SNAPSHOT";
 
     private static double runClient(int additionalThreads) {
         AtomicInteger successfulRequests = new AtomicInteger(); // record successful requests
@@ -59,8 +61,8 @@ public class MultiThreadedClient {
                 ApiClient apiClient = new ApiClient();
                 apiClient.setBasePath(BASE_URL);
                 int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
-                completionService.submit(new PostTask(eventQueue, batchSize, apiClient, newLatch,
-                        successfulRequests, MAX_RETRIES), null);
+                executorService.submit(new PostTask(eventQueue, batchSize, apiClient, newLatch,
+                        successfulRequests, MAX_RETRIES));
             }
             newLatch.await();
             oldLatch.await();
@@ -69,7 +71,6 @@ public class MultiThreadedClient {
             throw new RuntimeException("Error in processing requests", e);
         } finally {
             executorService.shutdown();
-
         }
 
         long endTime = System.currentTimeMillis();
@@ -95,24 +96,10 @@ public class MultiThreadedClient {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        // load test
-        int[] threadList = {300, 350};
-        for (int threads: threadList) {
-            runClient(threads);
-        }
-        // runClient(350); //
-        // runClient(217); // throughput = 2167
-        // runClient(300); // throughput = 2361
-        // runClient(500); // throughput = 2541
-        // runClient(168); // throughput = 1963
-        // runClient(700); // throughput = 2438.6080425293244
-        // ThreadCount: 121
-        // PeakThreadCount: 121
-        // TotalStartedThreadCount: 121
-
+        runClient(350);
 
         // 1st tryout:
-//        int[] threadList = {100, 300, 500};
+        // int[] threadList = {100, 300, 500};
         // 100: active threads = 73, avg throughput = 1614
         // 300: active threads = 148, avg throughput = 2686 (best result)
         // 500: active threads = 200, avg throughput = 2674
