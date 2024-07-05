@@ -23,7 +23,9 @@ public class MultiThreadedClientWithLog {
     private static final int TOTAL_REQUESTS = 200_000;
     private static final int MAX_RETRIES = 5;
     // servlet
-    private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
+    // private static final String BASE_URL = "http://localhost:8080/SkiResortAPIService_war/";
+    // private static final String BASE_URL = "http://35.91.145.61:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 tomcat servlet1 url
+    private static final String BASE_URL = "http://alb-1840563518.us-west-2.elb.amazonaws.com:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 load balancer DNS name
     // springboot
     // private static final String BASE_URL = "http://34.221.187.81:8080/cs-6650-distributed-ski-resort-server-springboot-1.0-SNAPSHOT";
     private static final String logPath = "logs/logfile.csv";
@@ -42,11 +44,10 @@ public class MultiThreadedClientWithLog {
 
         ExecutorService executorService = Executors.newCachedThreadPool();
 
-        ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
         CountDownLatch oldLatch = new CountDownLatch(NUM_THREADS_INITIAL);
 
         long startTime = System.currentTimeMillis();
-
+        //  ----------  PHASE 1 - warm up with 32 threads ------------------
         // Start initial batch of threads
         for (int i = 0; i < NUM_THREADS_INITIAL; i++) {
             ApiClient apiClient = new ApiClient();
@@ -55,42 +56,33 @@ public class MultiThreadedClientWithLog {
                     successfulRequests, MAX_RETRIES, logQueue), null);
         }
 
-        try {
-            Future<Void> completedFuture = completionService.take();  // Wait for the first thread to complete
-            completedFuture.get();  // Throws an exception if the underlying task did
+        //  ----------  PHASE 2 - submit additional 200 threads  ------------------
+        // Calculate request per thread based on additional threads submitted
+        int remainingRequests = 168000;
+        int requestsPerThread = remainingRequests / additionalThreads;
+        int leftOverRequests = remainingRequests % additionalThreads;
 
-//            // Record the time when the first thread completes
-//            firstThreadCompletionTime = System.currentTimeMillis();
-//            firstTime = firstThreadCompletionTime - startTime;
-//            firstSuccessfulRequests = successfulRequests.get();
-
-            // Calculate request per thread based on remaining requests
-            int remainingRequests = TOTAL_REQUESTS - REQUESTS_PER_THREAD * NUM_THREADS_INITIAL;
-            int requestsPerThread = remainingRequests / additionalThreads;
-            int leftOverRequests = remainingRequests % additionalThreads;
-
-            CountDownLatch newLatch = new CountDownLatch(additionalThreads);
-            // Submit additional tasks
-            for (int i = 0; i < additionalThreads; i++) {
-                ApiClient apiClient = new ApiClient();
-                apiClient.setBasePath(BASE_URL);
-                int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
-                executorService.submit(new PostTaskWithLog(eventQueue, batchSize, apiClient, newLatch,
-                        successfulRequests, MAX_RETRIES, logQueue), null);
-            }
-            newLatch.await();
-            oldLatch.await();
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Error in processing requests", e);
-        } finally {
-            executorService.shutdown();
+        CountDownLatch newLatch = new CountDownLatch(additionalThreads);
+        // Submit additional tasks
+        for (int i = 0; i < additionalThreads; i++) {
+            ApiClient apiClient = new ApiClient();
+            apiClient.setBasePath(BASE_URL);
+            int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
+            executorService.submit(new PostTaskWithLog(eventQueue, batchSize, apiClient, newLatch,
+                    successfulRequests, MAX_RETRIES, logQueue), null);
         }
+
+        // wait for all threads to finish
+        oldLatch.await();
+        newLatch.await();
+
+        executorService.shutdown();
 
         long endTime = System.currentTimeMillis();
         long totalTime = endTime - startTime;
         double throughput = TOTAL_REQUESTS / (totalTime / 1000.0);  // requests per second
-        System.out.println("Number of new threads created after initial batch: " + additionalThreads);
+        System.out.println("Number of new threads at 1st batch: " + NUM_THREADS_INITIAL);
+        System.out.println("Number of new threads at 2nd batch: " + additionalThreads);
         System.out.println("Number of successful requests: " + successfulRequests.get());
         System.out.println("Number of unsuccessful requests: " + (TOTAL_REQUESTS - successfulRequests.get()));
         System.out.println("Total run time (wall time): " + (totalTime / 1000.0) + " s");
@@ -98,11 +90,10 @@ public class MultiThreadedClientWithLog {
 
     }
     public static void main(String[] args) throws FileNotFoundException, InterruptedException {
-        runClient(350); // 200 active threads
+        runClient(200); // tomcat setting 200 max threads
 
         // get response times
         List<Long> responseTimes = readColumnValues(logPath, 2);
-
 
         double mean = responseTimes.stream()
                 .mapToLong(Long::longValue)
@@ -125,9 +116,9 @@ public class MultiThreadedClientWithLog {
         System.out.println("Maximum response time: " + max + " ms");
 
         // get timestamps
-        List<Long> timestamps = readColumnValues(logPath, 0);
-        Map<Long, Integer> throughputMap = calculateThroughput(timestamps, 1000);
-        drawPlot(throughputMap);
+//        List<Long> timestamps = readColumnValues(logPath, 0);
+//        Map<Long, Integer> throughputMap = calculateThroughput(timestamps, 1000);
+        // drawPlot(throughputMap);
     }
 
     /*

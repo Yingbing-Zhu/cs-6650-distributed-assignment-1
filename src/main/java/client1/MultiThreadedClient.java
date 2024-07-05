@@ -13,106 +13,74 @@ public class MultiThreadedClient {
     private static final int TOTAL_REQUESTS = 200_000; // total requests
     private static final int MAX_RETRIES = 5; // retries in api call
     // servlet
-    private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
+    // private static final String BASE_URL = "http://localhost:8080/SkiResortAPIService_war/"; // local test
+    private static final String BASE_URL = "http://18.237.231.24:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 tomcat servlet1 url
+    // private static final String BASE_URL = "http://34.222.68.70:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 tomcat servlet3 url
+    // private static final String BASE_URL = "http://alb-1840563518.us-west-2.elb.amazonaws.com:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 load balancer DNS name
     // springboot
     // private static final String BASE_URL = "http://34.221.187.81:8080/cs-6650-distributed-ski-resort-server-springboot-1.0-SNAPSHOT";
 
-    private static double runClient(int additionalThreads) {
+    private static double runClient(int additionalThreads) throws InterruptedException {
         AtomicInteger successfulRequests = new AtomicInteger(); // record successful requests
         BlockingQueue<LiftRideEvent> eventQueue = new LinkedBlockingQueue<>();
         new Thread(new LiftRideGenerator(eventQueue, TOTAL_REQUESTS)).start(); // the generate event finish early
 
         ExecutorService executorService = Executors.newCachedThreadPool(); // handle a large number of short-lived tasks. Examples include a web server handling sporadic and high-volume request loads where tasks complete quickly.
-        ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
-
 
         CountDownLatch oldLatch = new CountDownLatch(NUM_THREADS_INITIAL);
 
         long startTime = System.currentTimeMillis();
 
-        // Start initial batch of threads
+        //  ----------  PHASE 1 - warm up with 32 threads ------------------
+        // Start initial batch of threads for warm up
         for (int i = 0; i < NUM_THREADS_INITIAL; i++) {
             ApiClient apiClient = new ApiClient();
             apiClient.setBasePath(BASE_URL);
-            completionService.submit(new PostTask(eventQueue, REQUESTS_PER_THREAD, apiClient, oldLatch,
-                    successfulRequests, MAX_RETRIES), null);
+            executorService.submit(new PostTask(eventQueue, REQUESTS_PER_THREAD, apiClient, oldLatch,
+                    successfulRequests, MAX_RETRIES));
         }
 
-//        long firstThreadCompletionTime;
-//        int firstSuccessfulRequests;
-//        long firstTime;
-        try {
-            Future<Void> completedFuture = completionService.take();  // Wait for the first thread to complete
-            completedFuture.get();  // Throws an exception if the underlying task did
+        //  ----------  PHASE 2 - submit additional 200 threads  ------------------
+        int remaining = 168000;
+        int requestsPerThread = remaining / additionalThreads;
+        int leftOverRequests = remaining % additionalThreads;
 
-//            // Record the time when the first thread completes
-//            firstThreadCompletionTime = System.currentTimeMillis();
-//            firstTime = firstThreadCompletionTime - startTime;
-//            firstSuccessfulRequests = successfulRequests.get();
-
-            // Calculate request per thread based on remaining requests
-            int remainingRequests = TOTAL_REQUESTS - REQUESTS_PER_THREAD * NUM_THREADS_INITIAL;
-            int requestsPerThread = remainingRequests / additionalThreads;
-            int leftOverRequests = remainingRequests % additionalThreads;
-
-            CountDownLatch newLatch = new CountDownLatch(additionalThreads);
-            // Submit additional tasks
-            for (int i = 0; i < additionalThreads; i++) {
-                ApiClient apiClient = new ApiClient();
-                apiClient.setBasePath(BASE_URL);
-                int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);;
-                executorService.submit(new PostTask(eventQueue, batchSize, apiClient, newLatch,
-                        successfulRequests, MAX_RETRIES));
-            }
-            newLatch.await();
-            oldLatch.await();
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Error in processing requests", e);
-        } finally {
-            executorService.shutdown();
+        CountDownLatch newLatch = new CountDownLatch(additionalThreads);
+        // Submit additional tasks
+        for (int i = 0; i < additionalThreads; i++) {
+            ApiClient apiClient = new ApiClient();
+            apiClient.setBasePath(BASE_URL);
+            int batchSize = requestsPerThread + (i == additionalThreads - 1 ? leftOverRequests : 0);
+            executorService.submit(new PostTask(eventQueue, batchSize, apiClient, newLatch,
+                    successfulRequests, MAX_RETRIES));
         }
+
+        // wait for all threads to finish
+        oldLatch.await(); // wait for the first batch to finish
+        newLatch.await(); // wait for new batch to finish
+
+        executorService.shutdown();
 
         long endTime = System.currentTimeMillis();
         long totalTime = endTime - startTime;
         double totalThroughput = TOTAL_REQUESTS / (totalTime / 1000.0);
 
-//        // --------------------- 1st stage throughput -----------------------
-//        double firstThroughput = firstSuccessfulRequests / (firstTime / 1000.0);
-//        System.out.println("1st Stage throughput: " + firstThroughput );
-//
-//        // --------------------- 2nd stage throughput -----------------------
-//        long secondThreadCompletionTime = endTime - firstThreadCompletionTime;
-//        double secondThroughput = TOTAL_REQUESTS / (secondThreadCompletionTime / 1000.0);
-//        System.out.println("2nd Stage throughput: " + secondThroughput );
-
-
-        System.out.println("Number of new threads created after initial batch: " + additionalThreads);
+        System.out.println("Number of new threads created at 1st batch: " + NUM_THREADS_INITIAL);
+        System.out.println("Number of new threads created at 2nd batch: " + additionalThreads);
+        System.out.println("Max threads configured at Tomcat: 200");
         System.out.println("Number of successful requests: " + successfulRequests.get());
         System.out.println("Number of unsuccessful requests: " + (TOTAL_REQUESTS - successfulRequests.get()));
         System.out.println("Total run time (wall time): " + (totalTime / 1000.0) + " s");
-        System.out.println("Total throughput (requests per second): " + totalThroughput );
+        System.out.println("Total throughput (requests per second): " + totalThroughput);
         return totalThroughput;
     }
 
     public static void main(String[] args) throws InterruptedException {
-        runClient(350);
+        runClient(200);
 
         // 1st tryout:
-        // int[] threadList = {100, 300, 500};
-        // 100: active threads = 73, avg throughput = 1614
-        // 300: active threads = 148, avg throughput = 2686 (best result)
-        // 500: active threads = 200, avg throughput = 2674
-
-
-        // 2nd tryout:
-        // int[] threadList = {200, 250, 300, 350, 400};
-        // 200: active threads = 90, avg throughput = 2218
-        // 250: active threads = 116, avg throughput = 2538
-        // 300: active threads = 146, avg throughput = 2692
-        // 350: active threads = 162, avg throughput = 2843 (best result)
-        // 400: active threads = 200, avg throughput = 2456
-
+        // int[] threadList = {50, 100, 150, 200};
+        // best result is 100
 
 //        double bestThroughput = 0;
 //        double throughput;
@@ -128,8 +96,5 @@ public class MultiThreadedClient {
 //        }
 //        System.out.println("Best Throughput: " + bestThroughput);
 //        System.out.println("Best Number of  Thread: " + bestThreads);
-
     }
-
 }
-

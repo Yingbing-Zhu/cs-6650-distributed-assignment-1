@@ -13,8 +13,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SingleThreadClient {
     private static final int TOTAL_REQUESTS = 10_000;
     private static final int MAX_RETRIES = 5;
+    // private static final String BASE_URL = "http://localhost:8080/SkiResortAPIService_war/";
+    private static final String BASE_URL = "http://52.41.249.244:8080/SkiResortAPIService-1.0-SNAPSHOT/"; // ec2 tomcat servlet1 url
     // servlet
-    private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
+    // private static final String BASE_URL = "http://34.221.187.81:8080/SkiResortAPIService/";
     // springboot
     // private static final String BASE_URL = "http://34.221.187.81:8080/cs-6650-distributed-ski-resort-server-springboot-1.0-SNAPSHOT";
     private static final BlockingQueue<LiftRideEvent> eventQueue = new LinkedBlockingQueue<>();
